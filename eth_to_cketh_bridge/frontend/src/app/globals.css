@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Define light and dark mode colors */
+:root {
+  --background: #ffffff;
+  --foreground:Here's the complete updated code for your `globals.css`, ensuring a clean integration of light and dark themes, along with the previous file updates.
+
+### Updated `globals.css`
+```css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Define light and dark mode colors */
+:root {
+  --background: #ffffff;
+  --foreground: #000000;
+}
+
+.dark {
+  --background: #1a202c; /* Dark background color */
+  --foreground: #ffffff; /* Dark foreground color */
+}
+
+/* Apply styles */
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+h1 {
+  font-size: 2rem; /* Increase font size for better visibility */
+  font-weight: bold;
+}
+
+button {
+  transition: background-color 0.3s ease; /* Smooth background color transitions */
+}
+
+button:hover {
+  background-color: rgba(255, 255, 255, 0.8); /* Light hover effect */
+}
+
+.loader {
+  border: 4px solid rgba(0, 0, 0, 0.1);
+  border-top: 4px solid rgba(0, 0, 0, 0.8);
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  animation: spin 1s linear infinite;
+}
+
+/* Spin animation */
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
