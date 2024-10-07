@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ethers } from "ethers";
 import { HttpAgent, Actor } from "@dfinity/agent";
 import { idlFactory } from './canister_idl'; // Placeholder for your canister interface
+import bridgeAbi from "./bridgeAbi"; // Import ABI for your contract
 
 // Extend the Window interface to include ethereum and ic (Plug wallet) properties
 declare global {
@@ -22,6 +23,8 @@ export default function Home() {
   const [transactionStatus, setTransactionStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
+
+  const contractAddress = "0x2aF5dd55B3543335f530a6860BB6410dd494Ef42"; // Placeholder bridge address
 
   // Connect to Ethereum Wallet (MetaMask)
   const handleEthConnect = async () => {
@@ -50,7 +53,7 @@ export default function Home() {
 
     try {
       const connected = await window.ic.plug.requestConnect({
-        whitelist: ["rrkah-fqaaa-aaaaa-aaaaq-cai"], // Placeholder canister
+        whitelist: ["bkyz2-fmaaa-aaaaa-qaaaq-cai"], // Correct Bridge canister ID
         host: "https://ic0.app",
       });
 
@@ -76,7 +79,7 @@ export default function Home() {
       let tx;
 
       if (action === "deposit") {
-        // Deposit logic for Ethereum
+        // Deposit logic for Ethereum using the deposit function
         if (!window.ethereum) {
           setTransactionStatus("Please install MetaMask or another Ethereum wallet provider.");
           return;
@@ -90,9 +93,12 @@ export default function Home() {
           return;
         }
 
+        // Create the contract instance and call the deposit function
+        const contract = new ethers.Contract(contractAddress, bridgeAbi, signer);
+        const icPrincipal = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(icpAddress));  // Hash ICP principal to bytes32
+
         try {
-          tx = await signer.sendTransaction({
-            to: "0x0000000000000000000000000000000000000000", // Placeholder bridge address
+          tx = await contract.deposit(icPrincipal, {
             value: ethers.utils.parseEther(amount),
           });
 
@@ -114,14 +120,13 @@ export default function Home() {
 
         const actor = Actor.createActor(idlFactory, {
           agent,
-          canisterId: 'rrkah-fqaaa-aaaaa-aaaaq-cai', // Your canister ID
+          canisterId: 'bd3sg-teaaa-aaaaa-qaaba-cai', // Backend canister ID
         });
 
         try {
           const amountToWithdraw = BigInt((parseFloat(amount) * 1_000_000_000).toFixed(0));
           const result = await actor.withdraw(amountToWithdraw);
 
-          console.log("Withdrawal result:", result);
           if (result) {
             setTransactionStatus('Withdrawal successful');
           } else {
@@ -129,13 +134,13 @@ export default function Home() {
           }
         } catch (error: any) {
           console.error("Withdrawal error:", error);
-          const errorMessage = error?.message || "Withdrawal failed."; // Handling error message
+          const errorMessage = error?.message || "Withdrawal failed.";
           setTransactionStatus("Withdrawal failed: " + errorMessage);
         }
       }
     } catch (error: any) {
       console.error(error);
-      const errorMessage = error?.message || "Transaction failed. Please check the console for details."; // Handling error message
+      const errorMessage = error?.message || "Transaction failed. Please check the console for details.";
       setTransactionStatus(errorMessage);
     } finally {
       setLoading(false);
@@ -188,6 +193,22 @@ export default function Home() {
       <p className={`mt-4 ${transactionStatus.includes('failed') ? 'text-red-500' : 'text-green-500'}`}>
         {transactionStatus}
       </p>
+
+      {/* Deployment Summary */}
+      <div className="mt-6 p-4 border rounded bg-gray-100">
+        <h2 className="text-xl font-bold">Deployment Summary:</h2>
+        <h3 className="font-semibold">Canisters Created:</h3>
+        <ul>
+          <li>Bridge Canister ID: <strong>br5f7-7uaaa-aaaaa-qaaca-cai</strong></li>
+          <li>Backend Canister ID: <strong>bkyz2-fmaaa-aaaaa-qaaaq-cai</strong></li>
+          <li>Frontend Canister ID: <strong>bd3sg-teaaa-aaaaa-qaaba-cai</strong></li>
+        </ul>
+        <h3 className="font-semibold">Accessing Your Canisters:</h3>
+        <ul>
+          <li>Frontend Canister: <a href="http://127.0.0.1:4943/?canisterId=bd3sg-teaaa-aaaaa-qaaba-cai" target="_blank" rel="noopener noreferrer">http://127.0.0.1:4943/?canisterId=bd3sg-teaaa-aaaaa-qaaba-cai</a></li>
+          <li>Backend Canister (Candid Interface): <a href="http://127.0.0.1:4943/?canisterId=be2us-64aaa-aaaaa-qaabq-cai&id=bkyz2-fmaaa-aaaaa-qaaaq-cai" target="_blank" rel="noopener noreferrer">http://127.0.0.1:4943/?canisterId=be2us-64aaa-aaaaa-qaabq-cai&id=bkyz2-fmaaa-aaaaa-qaaaq-cai</a></li>
+        </ul>
+      </div>
     </div>
   );
 }
