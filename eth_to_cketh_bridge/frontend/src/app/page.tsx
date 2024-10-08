@@ -2,8 +2,15 @@
 import React, { useState } from "react";
 import { ethers } from "ethers";
 import { HttpAgent, Actor } from "@dfinity/agent";
-import { idlFactory } from './canister_idl';
+import { idlFactory } from './canister_idl'; 
 import bridgeAbi from "./bridgeAbi.json";
+
+declare global {
+  interface Window {
+    ethereum?: any;
+    ic?: any;
+  }
+}
 
 export default function Home() {
   const [ethAddress, setEthAddress] = useState("");
@@ -15,9 +22,12 @@ export default function Home() {
   const [transactionStatus, setTransactionStatus] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const contractAddress = "0x443A852cd8DF39938CE628490195c95E60B12a10";
+  // Ensure contractAddress is always a string
+  const contractAddress = process.env.ETH_CONTRACT_ADDRESS ?? "";
+  const icCanisterId = process.env.ICP_CANISTER_ID ?? "";
+  const icWhitelistCanister = process.env.ICP_WHITELIST_CANISTER ?? "";
+  const icHost = process.env.IC_HOST ?? "";
 
-  // Connect to Ethereum Wallet (MetaMask)
   const handleEthConnect = async () => {
     if (!window.ethereum) {
       alert("Please install MetaMask!");
@@ -35,13 +45,6 @@ export default function Home() {
     }
   };
 
-  // Disconnect Ethereum Wallet
-  const handleEthDisconnect = () => {
-    setEthAddress("");
-    setIsEthConnected(false);
-  };
-
-  // Connect to Plug Wallet (ICP)
   const handleIcpConnect = async () => {
     if (!window.ic || !window.ic.plug) {
       alert("Please install the Plug Wallet extension!");
@@ -49,60 +52,79 @@ export default function Home() {
     }
     try {
       const connected = await window.ic.plug.requestConnect({
-        whitelist: ["bkyz2-fmaaa-aaaaa-qaaaq-cai"],
-        host: "https://ic0.app",
+        whitelist: [icWhitelistCanister],
+        host: icHost,
       });
+
       if (connected) {
-        setIsIcpConnected(true);
         const principal = await window.ic.plug.getPrincipal();
-        setIcpAddress(principal.toText());
+        const principalText = principal.toText();
+
+        // Validate Principal ID
+        if (!principalText || principalText === "aaaaa-aa") {
+          throw new Error("Invalid Principal ID received from Plug wallet.");
+        }
+
+        setIsIcpConnected(true);
+        setIcpAddress(principalText);
       } else {
         alert("Plug Wallet connection failed.");
       }
     } catch (error) {
       console.error("Error connecting to Plug wallet:", error);
+      setTransactionStatus(`Error connecting to Plug wallet: ${error.message}`);
     }
   };
 
-  // Disconnect ICP Wallet
-  const handleIcpDisconnect = () => {
-    setIcpAddress("");
-    setIsIcpConnected(false);
-  };
-
-  // Handle Deposit/Withdrawal
   const handleDepositWithdraw = async (e: React.FormEvent) => {
     e.preventDefault();
     setTransactionStatus('');
     setLoading(true);
+
     try {
       if (!isEthConnected || !isIcpConnected) {
         setTransactionStatus("Please connect both Ethereum and ICP wallets.");
         return;
       }
+
       let tx;
+
       if (action === "deposit") {
         const provider = new ethers.providers.Web3Provider(window.ethereum);
         const signer = provider.getSigner();
         const network = await provider.getNetwork();
+
         if (network.chainId !== 11155111) {
           setTransactionStatus("Please switch to the Sepolia network.");
           return;
         }
+
         const contract = new ethers.Contract(contractAddress, bridgeAbi, signer);
         const icPrincipal = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(icpAddress));
-        tx = await contract.deposit(icPrincipal, { value: ethers.utils.parseEther(amount) });
+
+        tx = await contract.deposit(icPrincipal, {
+          value: ethers.utils.parseEther(amount),
+        });
+
         await tx.wait();
         setTransactionStatus(`Transaction successful: ${tx.hash}`);
       } else {
-        const agent = new HttpAgent({ host: "https://ic0.app" });
+        // Use HttpAgent.create instead of deprecated constructor
+        const agent = await HttpAgent.create({ host: icHost });
         await agent.fetchRootKey();
+
         const actor = Actor.createActor(idlFactory, {
           agent,
-          canisterId: 'bd3sg-teaaa-aaaaa-qaaba-cai',
+          canisterId: icCanisterId, // Ensure this is a valid string
         });
+
         const amountToWithdraw = BigInt((parseFloat(amount) * 1_000_000_000).toFixed(0));
-        const result = await actor.withdraw({ amount: amountToWithdraw, ethAddress: ethAddress });
+
+        const result = await actor.withdraw({
+          amount: amountToWithdraw,
+          ethAddress: ethAddress,
+        });
+
         setTransactionStatus(result ? 'Withdrawal successful' : 'Withdrawal failed');
       }
     } catch (error: any) {
@@ -114,65 +136,48 @@ export default function Home() {
   };
 
   return (
-    <div className="p-8 bg-gray-50 text-black">
-      <header className="mb-6">
-        <h1 className="text-3xl font-bold">EtherPortal</h1>
-      </header>
+    <div className="p-4 bg-white text-black">
+      <h1 className="text-3xl font-bold">ETH to ckETH Bridge</h1>
 
-      <section className="bg-white p-6 rounded-lg shadow-md mb-6">
-        <h2 className="text-xl font-semibold mb-4">Connect Wallets</h2>
-        <div className="flex space-x-4">
-          {!isEthConnected ? (
-            <button onClick={handleEthConnect} className="p-2 bg-green-500 text-white rounded">
-              Connect MetaMask
-            </button>
-          ) : (
-            <div className="flex items-center space-x-2">
-              <p className="text-green-700">Connected to Ethereum: {ethAddress}</p>
-              <button onClick={handleEthDisconnect} className="p-1 bg-red-500 text-white rounded">
-                Disconnect
-              </button>
-            </div>
-          )}
-          {!isIcpConnected ? (
-            <button onClick={handleIcpConnect} className="p-2 bg-blue-500 text-white rounded">
-              Connect Plug Wallet
-            </button>
-          ) : (
-            <div className="flex items-center space-x-2">
-              <p className="text-blue-700">Connected to ICP: {icpAddress}</p>
-              <button onClick={handleIcpDisconnect} className="p-1 bg-red-500 text-white rounded">
-                Disconnect
-              </button>
-            </div>
-          )}
-        </div>
-      </section>
+      {/* Connect Ethereum Wallet */}
+      <button onClick={handleEthConnect} className={`mt-4 ${isEthConnected ? 'bg-red-500' : 'bg-green-500'} text-white p-2 rounded`}>
+        {isEthConnected ? "Disconnect MetaMask" : "Connect MetaMask"}
+      </button>
+      {isEthConnected && <p>Connected to Ethereum: {ethAddress}</p>}
 
-      <section className="bg-white p-6 rounded-lg shadow-md mb-6">
-        <h2 className="text-xl font-semibold mb-4">Transaction</h2>
-        <form onSubmit={handleDepositWithdraw} className="space-y-4">
-          <div className="flex space-x-4">
-            <select value={action} onChange={(e) => setAction(e.target.value)} className="p-2 border rounded w-full">
-              <option value="deposit">Deposit ETH</option>
-              <option value="withdraw">Withdraw ckETH</option>
-            </select>
-            <input
-              type="text"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="Amount"
-              className="p-2 border rounded w-full"
-            />
-          </div>
-          <button type="submit" disabled={!amount || isNaN(Number(amount))} className="w-full bg-green-600 text-white p-2 rounded">
-            {loading ? "Processing..." : action === "deposit" ? "Deposit ETH" : "Withdraw ckETH"}
-          </button>
-        </form>
-        <p className={`mt-4 ${transactionStatus.includes('failed') ? 'text-red-500' : 'text-green-500'}`}>
-          {transactionStatus}
-        </p>
-      </section>
+      {/* Connect ICP Wallet */}
+      <button onClick={handleIcpConnect} className={`mt-4 ${isIcpConnected ? 'bg-red-500' : 'bg-blue-500'} text-white p-2 rounded`}>
+        {isIcpConnected ? "Disconnect Plug" : "Connect Plug Wallet"}
+      </button>
+      {isIcpConnected && <p>Connected to ICP: {icpAddress}</p>}
+
+      {/* Action Dropdown */}
+      <select value={action} onChange={(e) => setAction(e.target.value)} className="mt-4 p-2 border">
+        <option value="deposit">Deposit</option>
+        <option value="withdraw">Withdraw</option>
+      </select>
+
+      {/* Transaction Form */}
+      <form onSubmit={handleDepositWithdraw} className="mt-4">
+        <input
+          type="text"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="Enter amount"
+          className="p-2 border"
+        />
+        <button type="submit" disabled={!amount || isNaN(Number(amount))} className="mt-4 bg-green-500 text-white p-2 rounded">
+          {action === "deposit" ? "Deposit ETH" : "Withdraw ckETH"}
+        </button>
+      </form>
+
+      {loading && <div className="loader">Loading...</div>}
+      <p className={`mt-4 ${transactionStatus.includes('failed') ? 'text-red-500' : 'text-green-500'}`}>
+        {transactionStatus}
+      </p>
     </div>
   );
 }
+
+
+
