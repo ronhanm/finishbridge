@@ -1,11 +1,10 @@
 "use client";
-import { useState } from "react";
+import React, { useState } from "react";
 import { ethers } from "ethers";
 import { HttpAgent, Actor } from "@dfinity/agent";
-import { idlFactory } from './canister_idl'; // Placeholder for your canister interface
-import bridgeAbi from "./bridgeAbi"; // Import ABI for your contract
+import { idlFactory } from './canister_idl'; // Ensure this is correctly generated
+import bridgeAbi from "./bridgeAbi.json"; // Replace with your actual contract ABI
 
-// Extend the Window interface to include ethereum and ic (Plug wallet) properties
 declare global {
   interface Window {
     ethereum?: any;
@@ -15,7 +14,7 @@ declare global {
 
 export default function Home() {
   const [ethAddress, setEthAddress] = useState("");
-  const [icpAddress, setIcpAddress] = useState("");
+  const [icpAddress, setIcpAddress] = useState(""); // This should be correct
   const [isEthConnected, setIsEthConnected] = useState(false);
   const [isIcpConnected, setIsIcpConnected] = useState(false);
   const [action, setAction] = useState("deposit");
@@ -24,7 +23,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
 
-  const contractAddress = "0x2aF5dd55B3543335f530a6860BB6410dd494Ef42"; // Placeholder bridge address
+  const contractAddress = "0x083719e1441afe27f86683b1f5288c56989c001d"; // Replace with actual contract address
 
   // Connect to Ethereum Wallet (MetaMask)
   const handleEthConnect = async () => {
@@ -50,10 +49,9 @@ export default function Home() {
       alert("Please install the Plug Wallet extension!");
       return;
     }
-
     try {
       const connected = await window.ic.plug.requestConnect({
-        whitelist: ["bkyz2-fmaaa-aaaaa-qaaaq-cai"], // Correct Bridge canister ID
+        whitelist: ["bkyz2-fmaaa-aaaaa-qaaaq-cai"], // Replace with actual canister ID
         host: "https://ic0.app",
       });
 
@@ -76,14 +74,16 @@ export default function Home() {
     setLoading(true);
 
     try {
+      // Ensure both wallets are connected
+      if (!isEthConnected || !isIcpConnected) {
+        setTransactionStatus("Please connect both Ethereum and ICP wallets.");
+        return;
+      }
+
       let tx;
 
       if (action === "deposit") {
-        // Deposit logic for Ethereum using the deposit function
-        if (!window.ethereum) {
-          setTransactionStatus("Please install MetaMask or another Ethereum wallet provider.");
-          return;
-        }
+        // Deposit logic for Ethereum
         const provider = new ethers.providers.Web3Provider(window.ethereum);
         const signer = provider.getSigner();
         const network = await provider.getNetwork();
@@ -93,55 +93,38 @@ export default function Home() {
           return;
         }
 
-        // Create the contract instance and call the deposit function
         const contract = new ethers.Contract(contractAddress, bridgeAbi, signer);
-        const icPrincipal = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(icpAddress));  // Hash ICP principal to bytes32
+        const icPrincipal = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(icpAddress)); // Hash ICP principal
 
-        try {
-          tx = await contract.deposit(icPrincipal, {
-            value: ethers.utils.parseEther(amount),
-          });
+        tx = await contract.deposit(icPrincipal, {
+          value: ethers.utils.parseEther(amount),
+        });
 
-          // Wait for transaction confirmation
-          await tx.wait();
-
-          if (tx.hash) {
-            setTransactionStatus(`Transaction successful: ${tx.hash}`);
-          }
-        } catch (error) {
-          console.error(error);
-          setTransactionStatus("Transaction failed: " + (error?.message || "Unknown error"));
-        }
-
+        await tx.wait();
+        setTransactionStatus(`Transaction successful: ${tx.hash}`);
       } else {
         // ICP Withdrawal logic
         const agent = new HttpAgent({ host: "https://ic0.app" });
-        await agent.fetchRootKey(); // Fetch the root key before making the call
+        await agent.fetchRootKey();
 
         const actor = Actor.createActor(idlFactory, {
           agent,
-          canisterId: 'bd3sg-teaaa-aaaaa-qaaba-cai', // Backend canister ID
+          canisterId: 'bd3sg-teaaa-aaaaa-qaaba-cai', // Replace with your actual canister ID
         });
 
-        try {
-          const amountToWithdraw = BigInt((parseFloat(amount) * 1_000_000_000).toFixed(0));
-          const result = await actor.withdraw(amountToWithdraw);
+        // Ensure `amountToWithdraw` is a valid BigInt
+        const amountToWithdraw = BigInt((parseFloat(amount) * 1_000_000_000).toFixed(0));
 
-          if (result) {
-            setTransactionStatus('Withdrawal successful');
-          } else {
-            setTransactionStatus('Withdrawal failed');
-          }
-        } catch (error: any) {
-          console.error("Withdrawal error:", error);
-          const errorMessage = error?.message || "Withdrawal failed.";
-          setTransactionStatus("Withdrawal failed: " + errorMessage);
-        }
+        const result = await actor.withdraw({
+          amount: amountToWithdraw,  // Pass as BigInt directly
+          ethAddress: ethAddress,    // Ethereum address for the withdrawal
+        });
+
+        setTransactionStatus(result ? 'Withdrawal successful' : 'Withdrawal failed');
       }
     } catch (error: any) {
-      console.error(error);
-      const errorMessage = error?.message || "Transaction failed. Please check the console for details.";
-      setTransactionStatus(errorMessage);
+      console.error("Withdrawal error:", error); // Enhanced error logging
+      setTransactionStatus(`Transaction failed: ${error?.message || "Unknown error"}`);
     } finally {
       setLoading(false);
     }
@@ -166,7 +149,7 @@ export default function Home() {
       <button onClick={handleIcpConnect} className={`mt-4 ${isIcpConnected ? 'bg-red-500' : 'bg-blue-500'} text-white p-2 rounded`}>
         {isIcpConnected ? "Disconnect Plug" : "Connect Plug Wallet"}
       </button>
-      {isIcpConnected && <p>Connected to ICP: {icpAddress}</p>}
+      {isIcpConnected && <p>Connected to ICP: {icpAddress}</p>} {/* Updated to use icpAddress */}
 
       {/* Action Dropdown */}
       <select value={action} onChange={(e) => setAction(e.target.value)} className="mt-4 p-2 border">
@@ -193,22 +176,7 @@ export default function Home() {
       <p className={`mt-4 ${transactionStatus.includes('failed') ? 'text-red-500' : 'text-green-500'}`}>
         {transactionStatus}
       </p>
-
-      {/* Deployment Summary */}
-      <div className="mt-6 p-4 border rounded bg-gray-100">
-        <h2 className="text-xl font-bold">Deployment Summary:</h2>
-        <h3 className="font-semibold">Canisters Created:</h3>
-        <ul>
-          <li>Bridge Canister ID: <strong>br5f7-7uaaa-aaaaa-qaaca-cai</strong></li>
-          <li>Backend Canister ID: <strong>bkyz2-fmaaa-aaaaa-qaaaq-cai</strong></li>
-          <li>Frontend Canister ID: <strong>bd3sg-teaaa-aaaaa-qaaba-cai</strong></li>
-        </ul>
-        <h3 className="font-semibold">Accessing Your Canisters:</h3>
-        <ul>
-          <li>Frontend Canister: <a href="http://127.0.0.1:4943/?canisterId=bd3sg-teaaa-aaaaa-qaaba-cai" target="_blank" rel="noopener noreferrer">http://127.0.0.1:4943/?canisterId=bd3sg-teaaa-aaaaa-qaaba-cai</a></li>
-          <li>Backend Canister (Candid Interface): <a href="http://127.0.0.1:4943/?canisterId=be2us-64aaa-aaaaa-qaabq-cai&id=bkyz2-fmaaa-aaaaa-qaaaq-cai" target="_blank" rel="noopener noreferrer">http://127.0.0.1:4943/?canisterId=be2us-64aaa-aaaaa-qaabq-cai&id=bkyz2-fmaaa-aaaaa-qaaaq-cai</a></li>
-        </ul>
-      </div>
     </div>
   );
 }
+
