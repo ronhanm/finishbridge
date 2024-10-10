@@ -2,8 +2,13 @@
 import React, { useState } from "react";
 import { ethers } from "ethers";
 import { HttpAgent, Actor } from "@dfinity/agent";
-import { idlFactory } from './canister_idl';
-import bridgeAbi from "./bridgeAbi.json";
+import { idlFactory } from './canister_idl';  // Canister's IDL
+import bridgeAbi from "./bridgeAbi.json";  // Ethereum smart contract ABI
+
+const contractAddress = "0xe9ec9588cd461a7db2b34051ec74a92098fa8afc";  // Ethereum contract address
+const icCanisterId = "bd3sg-teaaa-aaaaa-qaaba-cai";  // ICP canister ID
+const icWhitelistCanister = "bkyz2-fmaaa-aaaaa-qaaaq-cai";  // ICP whitelist canister
+const icHost = "http://127.0.0.1:4943/";  // ICP host URL for local testing
 
 declare global {
   interface Window {
@@ -22,11 +27,7 @@ export default function Home() {
   const [transactionStatus, setTransactionStatus] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const contractAddress = process.env.ETH_CONTRACT_ADDRESS ?? "";
-  const icCanisterId = process.env.ICP_CANISTER_ID ?? "";
-  const icWhitelistCanister = process.env.ICP_WHITELIST_CANISTER ?? "";
-  const icHost = process.env.IC_HOST ?? "";
-
+  // Handle Ethereum wallet connection
   const handleEthConnect = async () => {
     if (!window.ethereum) {
       alert("Please install MetaMask!");
@@ -40,10 +41,11 @@ export default function Home() {
       const address = await signer.getAddress();
       setEthAddress(address);
     } catch (error) {
-      console.error(error);
+      console.error("Error connecting to Ethereum:", error);
     }
   };
 
+  // Handle ICP Plug Wallet connection
   const handleIcpConnect = async () => {
     if (!window.ic || !window.ic.plug) {
       alert("Please install the Plug Wallet extension!");
@@ -57,23 +59,19 @@ export default function Home() {
 
       if (connected) {
         const principal = await window.ic.plug.getPrincipal();
-        const principalText = principal.toText();
-
-        if (!principalText || principalText === "aaaaa-aa") {
-          throw new Error("Invalid Principal ID received from Plug wallet.");
-        }
-
+        setIcpAddress(principal.toText());
         setIsIcpConnected(true);
-        setIcpAddress(principalText);
       } else {
-        alert("Plug Wallet connection failed.");
+        throw new Error("Plug Wallet connection failed.");
       }
     } catch (error) {
-      console.error("Error connecting to Plug wallet:", error);
-      setTransactionStatus(`Error connecting to Plug wallet: ${error.message}`);
+      const typedError = error as Error;
+      console.error("Error connecting to Plug wallet:", typedError.message);
+      setTransactionStatus(`Error connecting to Plug wallet: ${typedError.message}`);
     }
   };
 
+  // Handle deposit or withdrawal based on selected action
   const handleDepositWithdraw = async (e: React.FormEvent) => {
     e.preventDefault();
     setTransactionStatus('');
@@ -82,51 +80,55 @@ export default function Home() {
     try {
       if (!isEthConnected || !isIcpConnected) {
         setTransactionStatus("Please connect both Ethereum and ICP wallets.");
+        setLoading(false);
         return;
       }
-
-      let tx;
 
       if (action === "deposit") {
         const provider = new ethers.providers.Web3Provider(window.ethereum);
         const signer = provider.getSigner();
         const network = await provider.getNetwork();
 
-        if (network.chainId !== 11155111) {
+        if (network.chainId !== 11155111) {  // Sepolia test network chainId
           setTransactionStatus("Please switch to the Sepolia network.");
+          setLoading(false);
           return;
         }
 
         const contract = new ethers.Contract(contractAddress, bridgeAbi, signer);
         const icPrincipal = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(icpAddress));
 
-        tx = await contract.deposit(icPrincipal, {
-          value: ethers.utils.parseEther(amount),
+        const tx = await contract.deposit(icPrincipal, {
+          value: ethers.utils.parseEther(amount),  // Ensure ETH amount is correctly formatted
         });
 
         await tx.wait();
         setTransactionStatus(`Transaction successful: ${tx.hash}`);
       } else {
-        const agent = await HttpAgent.create({ host: icHost });
-        await agent.fetchRootKey();
+        const agent = new HttpAgent({ host: icHost });
+        await agent.fetchRootKey();  // Fetch the root key for local testing
 
         const actor = Actor.createActor(idlFactory, {
           agent,
           canisterId: icCanisterId,
         });
 
-        const amountToWithdraw = BigInt((parseFloat(amount) * 1_000_000_000).toFixed(0));
+        // Ensure the amount is passed as BigInt (Candid Nat)
+        const parsedAmount = BigInt(amount); // Convert string to BigInt directly
+
+        console.log("Parsed Amount as BigInt: ", parsedAmount);
 
         const result = await actor.withdraw({
-          amount: amountToWithdraw,
+          amount: parsedAmount,  // Pass BigInt directly
           ethAddress: ethAddress,
         });
 
         setTransactionStatus(result ? 'Withdrawal successful' : 'Withdrawal failed');
       }
-    } catch (error: any) {
-      console.error("Transaction error:", error);
-      setTransactionStatus(`Transaction failed: ${error?.message || "Unknown error"}`);
+    } catch (error) {
+      const typedError = error as Error;
+      console.error("Transaction error:", typedError.message);
+      setTransactionStatus(`Transaction failed: ${typedError.message}`);
     } finally {
       setLoading(false);
     }
@@ -137,19 +139,16 @@ export default function Home() {
       <div className="bg-white shadow-lg rounded-lg p-8 w-full max-w-lg">
         <h1 className="text-3xl font-bold text-center mb-6">ETH to ckETH Bridge</h1>
 
-        {/* Connect Ethereum Wallet */}
         <button onClick={handleEthConnect} className={`mb-4 w-full py-3 px-4 rounded-lg text-white transition ${isEthConnected ? 'bg-red-500' : 'bg-green-500'}`}>
           {isEthConnected ? "Disconnect MetaMask" : "Connect MetaMask"}
         </button>
         {isEthConnected && <p className="text-center text-sm mb-4">Connected to Ethereum: {ethAddress}</p>}
 
-        {/* Connect ICP Wallet */}
         <button onClick={handleIcpConnect} className={`mb-4 w-full py-3 px-4 rounded-lg text-white transition ${isIcpConnected ? 'bg-red-500' : 'bg-blue-500'}`}>
           {isIcpConnected ? "Disconnect Plug" : "Connect Plug Wallet"}
         </button>
         {isIcpConnected && <p className="text-center text-sm mb-4">Connected to ICP: {icpAddress}</p>}
 
-        {/* Action Dropdown */}
         <div className="mb-4">
           <label className="block text-gray-700 mb-2 text-center">Select Action</label>
           <select value={action} onChange={(e) => setAction(e.target.value)} className="p-3 border rounded w-full text-center">
@@ -158,7 +157,6 @@ export default function Home() {
           </select>
         </div>
 
-        {/* Transaction Form */}
         <form onSubmit={handleDepositWithdraw} className="mb-4">
           <input
             type="text"

@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@dfinity/candid": "^2.1.2",
+    "@dfinity/principal": "^2.1.2"
+  }
+}

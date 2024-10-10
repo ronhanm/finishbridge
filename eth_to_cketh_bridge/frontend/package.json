@@ -13,7 +13,7 @@
     "@mui/material": "^5.9.3",
     "@supabase/supabase-js": "^2.0.0",
     "@usedapp/core": "^0.5.0",
-    "alchemy-sdk": "^3.4.2",
+    "alchemy-sdk": "^3.4.3",
     "ethers": "^5.7.0",
     "next": "14.2.14",
     "react": "^18",
