@@ -6,9 +6,9 @@ import { idlFactory } from './canister_idl';  // Canister's IDL
 import bridgeAbi from "./bridgeAbi.json";  // Ethereum smart contract ABI
 
 const contractAddress = "0xe9ec9588cd461a7db2b34051ec74a92098fa8afc";  // Ethereum contract address
-const icCanisterId = "bd3sg-teaaa-aaaaa-qaaba-cai";  // ICP canister ID
-const icWhitelistCanister = "bkyz2-fmaaa-aaaaa-qaaaq-cai";  // ICP whitelist canister
-const icHost = "http://127.0.0.1:4943/";  // ICP host URL for local testing
+const icCanisterId = "hs5lq-nqaaa-aaaak-qln7a-cai";  // ICP canister ID
+const icWhitelistCanister = "r62qs-diaaa-aaaak-qlofq-cai";  // ICP whitelist canister
+const icHost = "https://ic0.app";  // ICP host URL for local testing
 
 declare global {
   interface Window {
@@ -41,7 +41,7 @@ export default function Home() {
       const address = await signer.getAddress();
       setEthAddress(address);
     } catch (error) {
-      console.error("Error connecting to Ethereum:", error);
+      console.error("Error connecting to Ethereum:", (error as Error).message);
     }
   };
 
@@ -65,9 +65,8 @@ export default function Home() {
         throw new Error("Plug Wallet connection failed.");
       }
     } catch (error) {
-      const typedError = error as Error;
-      console.error("Error connecting to Plug wallet:", typedError.message);
-      setTransactionStatus(`Error connecting to Plug wallet: ${typedError.message}`);
+      console.error("Error connecting to Plug wallet:", (error as Error).message);
+      setTransactionStatus(`Error connecting to Plug wallet: ${(error as Error).message}`);
     }
   };
 
@@ -98,23 +97,26 @@ export default function Home() {
         const contract = new ethers.Contract(contractAddress, bridgeAbi, signer);
         const icPrincipal = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(icpAddress));
 
+        // Convert input ETH amount (which can be decimal) to wei (BigInt)
+        const ethAmountInWei = ethers.utils.parseEther(amount);  // Converts decimal ETH to wei
+
         const tx = await contract.deposit(icPrincipal, {
-          value: ethers.utils.parseEther(amount),  // Ensure ETH amount is correctly formatted
+          value: ethAmountInWei,  // Pass as wei, BigInt compatible
         });
 
         await tx.wait();
         setTransactionStatus(`Transaction successful: ${tx.hash}`);
       } else {
         const agent = new HttpAgent({ host: icHost });
-        await agent.fetchRootKey();  // Fetch the root key for local testing
+        await agent.fetchRootKey();  // Fetch root key for local testing
 
         const actor = Actor.createActor(idlFactory, {
           agent,
           canisterId: icCanisterId,
         });
 
-        // Ensure the amount is passed as BigInt (Candid Nat)
-        const parsedAmount = BigInt(amount); // Convert string to BigInt directly
+        // Ensure the amount is passed as BigInt in atomic units (ckETH doesn't have decimals)
+        const parsedAmount = BigInt(Math.round(Number(amount) * 1_000_000_000)); // Multiply for conversion to BigInt
 
         console.log("Parsed Amount as BigInt: ", parsedAmount);
 
@@ -126,9 +128,8 @@ export default function Home() {
         setTransactionStatus(result ? 'Withdrawal successful' : 'Withdrawal failed');
       }
     } catch (error) {
-      const typedError = error as Error;
-      console.error("Transaction error:", typedError.message);
-      setTransactionStatus(`Transaction failed: ${typedError.message}`);
+      console.error("Transaction error:", (error as Error).message);
+      setTransactionStatus(`Transaction failed: ${(error as Error).message}`);
     } finally {
       setLoading(false);
     }
